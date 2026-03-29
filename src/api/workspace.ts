@@ -211,6 +211,14 @@ export async function getObjects2(
   return result[0].data;
 }
 
+export async function getWorkspaceInfo(
+  params: { id?: number; workspace?: string },
+  token?: string,
+): Promise<WorkspaceInfo> {
+  const result = await rpc<[WorkspaceInfo]>('get_workspace_info', [params], token);
+  return result[0];
+}
+
 export async function listReferencingObjects(
   objectIds: ObjectSpecification[],
   token?: string,

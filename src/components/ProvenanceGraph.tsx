@@ -328,7 +328,7 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         <span className="legend-item">Arrow tip = referenced object</span>
       </div>
       {dialogData && (
-        <ObjectInfoDialog objData={dialogData} onClose={() => setDialogData(null)} />
+        <ObjectInfoDialog objData={dialogData} token={token} onClose={() => setDialogData(null)} />
       )}
     </div>
   );

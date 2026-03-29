@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ObjectData, ProvenanceAction, SubAction } from '../api/workspace';
+import { getWorkspaceInfo } from '../api/workspace';
+
+// Module-level cache: ws_id → narrative_nice_name (null if not a narrative)
+const wsNiceNameCache = new Map<number, string | null>();
 
 type Tab = 'general' | 'metadata' | 'provenance';
 
@@ -32,7 +36,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 // ---- General tab ------------------------------------------------------------
 
-function GeneralTab({ objData }: { objData: ObjectData }) {
+function GeneralTab({ objData, wsNiceName }: { objData: ObjectData; wsNiceName: string | null }) {
   const [objId, name, type, saveDate, version, savedBy, wsId, wsName, checksum, size] = objData.info;
   const upa = `${wsId}/${objId}/${version}`;
   const dataviewUrl = `${NARRATIVE_HOST}/legacy/dataview/${upa}`;
@@ -54,10 +58,12 @@ function GeneralTab({ objData }: { objData: ObjectData }) {
       <Field label="Version">{version}</Field>
       <Field label="Saved by"><a href={`${NARRATIVE_HOST}/legacy/people/${savedBy}`} target="_blank" rel="noreferrer">{savedBy}</a></Field>
       <Field label="Save date">{formatDate(saveDate)}</Field>
-      <Field label="Workspace">
-        <a href={`${NARRATIVE_HOST}/narrative/${wsId}`} target="_blank" rel="noreferrer">{wsName}</a>
-        <span className="obj-dialog__muted"> (ID: {wsId})</span>
-      </Field>
+      <Field label="Workspace">{wsName} <span className="obj-dialog__muted">(ID: {wsId})</span></Field>
+      {wsNiceName && (
+        <Field label="Narrative">
+          <a href={`${NARRATIVE_HOST}/narrative/${wsId}`} target="_blank" rel="noreferrer">{wsNiceName}</a>
+        </Field>
+      )}
       <Field label="Object ID">{objId}</Field>
       <Field label="Size">
         {formatBytes(size)} <span className="obj-dialog__muted">({size.toLocaleString()} bytes)</span>
@@ -196,11 +202,28 @@ function ProvenanceTab({ actions }: { actions: ProvenanceAction[] }) {
 
 interface Props {
   objData: ObjectData;
+  token: string;
   onClose: () => void;
 }
 
-export function ObjectInfoDialog({ objData, onClose }: Props) {
+export function ObjectInfoDialog({ objData, token, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('general');
+  const [wsNiceName, setWsNiceName] = useState<string | null>(null);
+
+  const wsId = objData.info[6];
+  useEffect(() => {
+    if (wsNiceNameCache.has(wsId)) {
+      setWsNiceName(wsNiceNameCache.get(wsId) ?? null);
+      return;
+    }
+    getWorkspaceInfo({ id: wsId }, token)
+      .then(info => {
+        const name = info[8]?.narrative_nice_name ?? null;
+        wsNiceNameCache.set(wsId, name);
+        setWsNiceName(name);
+      })
+      .catch(() => { wsNiceNameCache.set(wsId, null); });
+  }, [wsId, token]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -236,7 +259,7 @@ export function ObjectInfoDialog({ objData, onClose }: Props) {
           ))}
         </div>
         <div className="obj-dialog__body">
-          {tab === 'general'    && <GeneralTab objData={objData} />}
+          {tab === 'general'    && <GeneralTab objData={objData} wsNiceName={wsNiceName} />}
           {tab === 'metadata'   && <MetadataTab objData={objData} />}
           {tab === 'provenance' && <ProvenanceTab actions={objData.provenance} />}
         </div>
