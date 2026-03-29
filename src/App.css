@@ -208,6 +208,45 @@ body {
   cursor: pointer;
 }
 
+.graph-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.node-overlay {
+  position: absolute;
+  transform-origin: 0 0;
+  text-align: center;
+  width: 150px;
+  pointer-events: none;
+}
+
+.node-overlay__name {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1a1a2e;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+.node-overlay__type {
+  display: block;
+  font-size: 9px;
+  color: #888;
+  margin-top: 2px;
+  line-height: 1.2;
+}
+
+.node-overlay__ws {
+  display: block;
+  font-size: 8px;
+  color: #bbb;
+  line-height: 1.2;
+}
+
 /* ---- Graph loading -------------------------------------------------------- */
 
 .graph-loading {
@@ -251,7 +290,7 @@ body {
 }
 
 .legend-item {
-  font-size: 0.72rem;
+  font-size: 0.82rem;
   color: #555;
   background: rgba(255,255,255,0.85);
   padding: 0.2rem 0.5rem;

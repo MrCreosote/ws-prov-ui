@@ -1,32 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import cytoscape, { type Core, type EdgeSingular } from 'cytoscape';
+import cytoscape, { type Core } from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 import {
   getObjects2,
   getObjectInfo3,
   listReferencingObjects,
-  type ProvenanceAction,
 } from '../api/workspace';
-import { ProvenancePanel } from './ProvenancePanel';
 import type { ObjOption } from './ObjectSelector';
 
 cytoscape.use(dagre);
 
 // ---- helpers ----------------------------------------------------------------
 
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+/** Strip KBase type version suffix: "KBaseFBA.FBA-13.2" → "KBaseFBA.FBA" */
+function parseType(fullType: string): string {
+  return fullType.replace(/-[\d.]+$/, '');
 }
 
-/** Wrap a string at character boundaries (names have no spaces) */
-function wrapChars(s: string, w: number): string {
-  const chunks: string[] = [];
-  for (let i = 0; i < s.length; i += w) chunks.push(s.slice(i, i + w));
-  return chunks.join('\n');
-}
-
-function nodeLabel(name: string, type: string, version: number, upa: string): string {
-  return `${wrapChars(name, 24)}\n${truncate(type, 32)}\nv${version}\n${upa}`;
+/** Insert zero-width spaces after _ and . so CSS can word-wrap at natural breakpoints */
+function formatName(name: string): string {
+  return name.replace(/[_.]/g, (c) => c + '\u200B');
 }
 
 // ---- layout & style ---------------------------------------------------------
@@ -34,7 +27,7 @@ function nodeLabel(name: string, type: string, version: number, upa: string): st
 const LAYOUT = {
   name: 'dagre',
   rankDir: 'TB',   // top-to-bottom: referrers → selected → referenced
-  nodeSep: 120,
+  nodeSep: 140,
   rankSep: 170,
 };
 
@@ -48,14 +41,7 @@ const STYLE: cytoscape.StylesheetStyle[] = [
       'background-color': '#4a90d9',
       'border-width': 2,
       'border-color': '#4a90d9',
-      label: 'data(label)',
-      'text-valign': 'bottom',
-      'text-halign': 'center',
-      'text-margin-y': 6,
-      'text-wrap': 'wrap',
-      'text-max-width': '200px',
-      color: '#1a1a2e',
-      'font-size': '11px',
+      label: '',  // HTML overlay used for labels instead of native text
     },
   },
   {
@@ -77,9 +63,10 @@ const STYLE: cytoscape.StylesheetStyle[] = [
       'border-style': 'dotted',
       'border-color': '#bbb',
       'text-valign': 'center',
-      'text-margin-y': 0,
+      'text-halign': 'center',
       'font-size': '10px',
       color: '#fff',
+      label: 'data(label)',  // truncated pill keeps native text
     },
   },
   {
@@ -87,23 +74,10 @@ const STYLE: cytoscape.StylesheetStyle[] = [
     style: {
       'curve-style': 'bezier',
       'target-arrow-shape': 'triangle',
-      // Dynamic offset: radius(11) + text-margin-y(6) + lines × font-size(11) + gap(4)
-      // For truncated nodes (pill shape, height 28), just clear the pill bottom.
-      'source-endpoint': ((ele: cytoscape.EdgeSingular) => {
-        const src = ele.source();
-        if (src.hasClass('truncated')) return '0px 16px';
-        const label = (src.data('label') as string) ?? '';
-        const lines = label.split('\n').length;
-        return `0px ${21 + lines * 11}px`;
-      }) as unknown as string,
       width: 2,
       'line-color': '#888',
       'target-arrow-color': '#888',
     },
-  },
-  {
-    selector: 'edge:selected',
-    style: { 'line-color': '#f0a500', 'target-arrow-color': '#f0a500', width: 3 },
   },
 ];
 
@@ -118,8 +92,8 @@ interface Props {
 
 export function ProvenanceGraph({ token, rootObject }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
-  const [selectedProvenance, setSelectedProvenance] = useState<ProvenanceAction[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -129,9 +103,22 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
     const cy = cytoscape({ container: containerRef.current, style: STYLE, elements: [] });
     cyRef.current = cy;
 
-    cy.on('tap', 'edge', (evt) => {
-      const edge = evt.target as EdgeSingular;
-      setSelectedProvenance(edge.data('provenance') ?? []);
+    // Keep overlay label positions and scale in sync with graph on every render (pan/zoom/layout)
+    cy.on('render', () => {
+      const overlay = overlayRef.current;
+      if (!overlay || cy.destroyed()) return;
+      const zoom = cy.zoom();
+      cy.nodes(':not(.truncated)').forEach((node) => {
+        const el = overlay.querySelector<HTMLElement>(`[data-nid="${node.id()}"]`);
+        if (!el) return;
+        const pos = node.renderedPosition();
+        const r = node.renderedHeight() / 2;
+        // left = pos.x - 75*zoom keeps visual center at pos.x at any zoom level
+        // (label is 150px wide; with scale(zoom) from top-left, right edge = pos.x+75*zoom)
+        el.style.left = `${Math.round(pos.x - 75 * zoom)}px`;
+        el.style.top = `${Math.round(pos.y + r + 6 * zoom)}px`;
+        el.style.transform = `scale(${zoom})`;
+      });
     });
 
     return () => { cy.destroy(); cyRef.current = null; };
@@ -143,14 +130,53 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
     if (!cy) return;
 
     cy.elements().remove();
-    setSelectedProvenance(null);
     setLoadError(null);
     setLoading(true);
+
+    if (overlayRef.current) overlayRef.current.innerHTML = '';
 
     const ref = rootObject.value;
     let cancelled = false;
 
+    /** Append a styled label div to the overlay for a non-truncated node */
+    function addOverlayLabel(id: string, name: string, type: string) {
+      const overlay = overlayRef.current;
+      if (!overlay) return;
+      const el = document.createElement('div');
+      el.setAttribute('data-nid', id);
+      el.className = 'node-overlay';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'node-overlay__name';
+      // Insert zero-width spaces so the browser can wrap at _ and .
+      nameEl.innerHTML = formatName(name);
+      const typeEl = document.createElement('span');
+      typeEl.className = 'node-overlay__type';
+      typeEl.textContent = parseType(type);
+      const wsEl = document.createElement('span');
+      wsEl.className = 'node-overlay__ws';
+      wsEl.textContent = id;
+      el.appendChild(nameEl);
+      el.appendChild(typeEl);
+      el.appendChild(wsEl);
+      overlay.appendChild(el);
+    }
+
+    /** Measure overlay label heights and set edge source-endpoint (zoom-invariant with scaled labels) */
+    function updateEdgeStyle() {
+      const _cy = cyRef.current;
+      if (!_cy || _cy.destroyed() || !overlayRef.current) return;
+      const els = overlayRef.current.querySelectorAll<HTMLElement>('.node-overlay');
+      let maxH = 0;
+      els.forEach((el) => { maxH = Math.max(maxH, el.offsetHeight); });
+      if (!maxH) return;
+      // With scale(zoom) applied to labels, they occupy maxH graph units regardless of zoom.
+      // So source-endpoint = radius(11) + gap(6) + label(maxH) + tail-gap(4) = 21 + maxH graph units.
+      const offset = Math.ceil(21 + maxH);
+      _cy.style().selector('edge').style({ 'source-endpoint': `0px ${offset}px` }).update();
+    }
+
     async function load() {
+      if (!cy) return;
       // 1. Fetch selected object (refs + provenance)
       const [objData] = await getObjects2({ objects: [{ ref }], no_data: 1 }, token);
       if (cancelled || cy.destroyed()) return;
@@ -174,17 +200,15 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
       const referrers = allReferrers.slice(0, REFERRER_LIMIT);
       const truncatedCount = allReferrers.length - referrers.length;
 
-      // 4. Fetch labels for referenced objects via the ref chain
-      let refLabels: (string | null)[] = refArray.map(() => null);
+      // 4. Fetch name+type for referenced objects via ref chain
+      let refNodeData: ({ name: string; type: string } | null)[] = refArray.map(() => null);
       if (refArray.length) {
         const { infos } = await getObjectInfo3(
           { objects: refArray.map((r) => ({ ref: `${ref};${r}` })), ignoreErrors: 1 },
           token,
         );
         if (cancelled || cy.destroyed()) return;
-        refLabels = infos.map((info, i) =>
-          info ? nodeLabel(info[1], info[2], info[4], refArray[i]) : null,
-        );
+        refNodeData = infos.map((info) => info ? { name: info[1], type: info[2] } : null);
       }
 
       // 5. Build graph in one batch
@@ -193,56 +217,44 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         // Root node (middle row)
         cy.add({
           group: 'nodes',
-          data: { id: ref, label: nodeLabel(rootInfo[1], rootInfo[2], rootInfo[4], ref) },
+          data: { id: ref, name: rootInfo[1], type: rootInfo[2] },
           classes: 'root',
         });
 
         // Referenced objects (bottom row): root → ref
         refArray.forEach((rRef, i) => {
-          cy.add({
-            group: 'nodes',
-            data: { id: rRef, label: refLabels[i] ?? rRef },
-          });
+          const d = refNodeData[i];
+          cy.add({ group: 'nodes', data: { id: rRef, name: d?.name ?? rRef, type: d?.type ?? '' } });
           cy.add({
             group: 'edges',
-            data: {
-              id: `${ref}→${rRef}`,
-              source: ref,
-              target: rRef,
-              provenance: objData.provenance,
-            },
+            data: { id: `${ref}→${rRef}`, source: ref, target: rRef },
           });
         });
 
         // Referrer objects (top row): referrer → root
         referrers.forEach((rinfo) => {
           const rRef = `${rinfo[6]}/${rinfo[0]}/${rinfo[4]}`;
-          cy.add({
-            group: 'nodes',
-            data: { id: rRef, label: nodeLabel(rinfo[1], rinfo[2], rinfo[4], rRef) },
-          });
-          cy.add({
-            group: 'edges',
-            data: { id: `${rRef}→${ref}`, source: rRef, target: ref, provenance: [] },
-          });
+          cy.add({ group: 'nodes', data: { id: rRef, name: rinfo[1], type: rinfo[2] } });
+          cy.add({ group: 'edges', data: { id: `${rRef}→${ref}`, source: rRef, target: ref } });
         });
 
         // "+N more" placeholder if referrers were truncated
         if (truncatedCount > 0) {
           const moreId = `${ref}__more`;
-          cy.add({
-            group: 'nodes',
-            data: { id: moreId, label: `+${truncatedCount} more` },
-            classes: 'truncated',
-          });
-          cy.add({
-            group: 'edges',
-            data: { id: `${moreId}→${ref}`, source: moreId, target: ref, provenance: [] },
-          });
+          cy.add({ group: 'nodes', data: { id: moreId, label: `+${truncatedCount} more` }, classes: 'truncated' });
+          cy.add({ group: 'edges', data: { id: `${moreId}→${ref}`, source: moreId, target: ref } });
         }
       });
 
+      // Add overlay labels (must happen before layout so positions are ready on first render)
+      cy.nodes(':not(.truncated)').forEach((node) => {
+        addOverlayLabel(node.id(), node.data('name') as string, node.data('type') as string);
+      });
+
       cy.layout(LAYOUT as cytoscape.LayoutOptions).run();
+
+      // After the first paint, measure label heights and set source-endpoint
+      requestAnimationFrame(updateEdgeStyle);
     }
 
     load()
@@ -255,24 +267,18 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
       });
 
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootObject.value, token]);
 
   return (
     <div className="graph-wrapper">
       <div ref={containerRef} className="graph-container" />
+      <div ref={overlayRef} className="graph-overlay" />
       {loading && <div className="graph-loading">Loading…</div>}
       {loadError && <div className="graph-error">{loadError}</div>}
       <div className="graph-legend">
         <span className="legend-item">Gold border = selected object</span>
-        <span className="legend-item legend-item--edge">Click an edge to view provenance details</span>
+        <span className="legend-item">Arrow tip = referenced object</span>
       </div>
-      {selectedProvenance !== null && (
-        <ProvenancePanel
-          actions={selectedProvenance}
-          onClose={() => setSelectedProvenance(null)}
-        />
-      )}
     </div>
   );
 }
