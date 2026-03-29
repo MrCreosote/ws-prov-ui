@@ -1,0 +1,331 @@
+/* ---- Layout --------------------------------------------------------------- */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f5f7fa;
+  color: #1a1a2e;
+}
+
+#root {
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: #1a2a4a;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.app-selectors {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-end;
+}
+
+.app-selectors .selector-group {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+/* Labels inside the dark header need lighter colours */
+.app-header .selector-group label {
+  color: #8aadcf;
+}
+.app-header .selector-group .toggle {
+  color: #8aadcf;
+}
+.app-header .error {
+  color: #ff9090;
+}
+
+.app-main {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.app-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #666;
+  font-size: 1rem;
+}
+
+/* ---- Selectors ------------------------------------------------------------ */
+
+.selector-group label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.error {
+  font-size: 0.8rem;
+  color: #c0392b;
+  margin-bottom: 4px;
+}
+
+/* Selector header row with label + toggle */
+.selector-group__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 4px;
+}
+
+.selector-group__header label:first-child {
+  margin-bottom: 0;
+}
+
+.copy-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #8aadcf;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.copy-btn:hover { color: #fff; }
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: #555;
+  cursor: pointer;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.toggle input { cursor: pointer; }
+
+/* Username in header */
+.app-header__user {
+  font-size: 0.8rem;
+  color: #8aadcf;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Workspace option */
+.ws-option__nice { font-weight: 600; color: #1a1a2e; }
+.ws-option__name { font-size: 0.85rem; color: #444; }
+.ws-option__id   { font-size: 0.75rem; color: #888; }
+
+/* Object option */
+.obj-option__name { font-weight: 600; }
+.obj-option__ver  { font-weight: normal; color: #777; font-size: 0.85em; }
+.obj-option__type { font-size: 0.8rem; color: #555; font-family: monospace; }
+.obj-option__upa  { font-size: 0.75rem; color: #666; font-family: monospace; }
+.obj-option__meta { font-size: 0.75rem; color: #888; margin-top: 2px; }
+
+/* ---- Token input ---------------------------------------------------------- */
+
+.token-input {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.token-input input {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #5a7aa8;
+  border-radius: 4px;
+  background: #243558;
+  color: #fff;
+  font-size: 0.85rem;
+  width: 220px;
+}
+
+.token-input input::placeholder { color: #8aadcf; }
+
+.token-input button {
+  padding: 0.35rem 0.75rem;
+  border: none;
+  border-radius: 4px;
+  background: #4a90d9;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.token-input button:disabled { opacity: 0.4; cursor: default; }
+.token-input button:hover:not(:disabled) { background: #357abd; }
+
+.token-input--set .token-input__label {
+  font-size: 0.8rem;
+  color: #7ec8a0;
+}
+
+/* ---- Graph ---------------------------------------------------------------- */
+
+.graph-wrapper {
+  display: flex;
+  height: 100%;
+  position: relative;
+}
+
+.graph-container {
+  flex: 1;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* ---- Graph loading -------------------------------------------------------- */
+
+.graph-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #666;
+  font-size: 1rem;
+  pointer-events: none;
+}
+
+/* ---- Graph error ---------------------------------------------------------- */
+
+.graph-error {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fdecea;
+  border: 1px solid #c0392b;
+  color: #c0392b;
+  font-size: 0.8rem;
+  font-family: monospace;
+  padding: 0.4rem 0.75rem;
+  border-radius: 4px;
+  max-width: 80%;
+  word-break: break-all;
+  z-index: 10;
+}
+
+/* ---- Graph legend --------------------------------------------------------- */
+
+.graph-legend {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  pointer-events: none;
+}
+
+.legend-item {
+  font-size: 0.72rem;
+  color: #555;
+  background: rgba(255,255,255,0.85);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.legend-item--unexpanded::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px dashed #a0c8ff;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+/* ---- Provenance panel ----------------------------------------------------- */
+
+.prov-panel {
+  width: 380px;
+  flex-shrink: 0;
+  background: #fff;
+  border-left: 1px solid #d0d7e3;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.prov-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.prov-panel__header h2 { margin: 0; font-size: 1rem; }
+
+.prov-panel__header button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: #555;
+}
+
+.prov-panel__action {
+  border-top: 1px solid #e8ecf0;
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.prov-panel__action h3 { margin: 0 0 0.5rem; font-size: 0.9rem; color: #555; }
+
+.prov-panel__field dt {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  margin-top: 0.5rem;
+}
+
+.prov-panel__field dd {
+  margin: 0;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.prov-panel__pre {
+  margin: 0;
+  font-size: 0.75rem;
+  background: #f5f7fa;
+  padding: 0.4rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
