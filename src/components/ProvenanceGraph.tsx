@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import cytoscape, { type Core } from 'cytoscape';
+import cytoscape, { type Core, type NodeSingular } from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 import {
   getObjects2,
   getObjectInfo3,
   listReferencingObjects,
+  type ObjectData,
 } from '../api/workspace';
 import type { ObjOption } from './ObjectSelector';
+import { ObjectInfoDialog } from './ObjectInfoDialog';
 
 cytoscape.use(dagre);
 
@@ -54,6 +56,15 @@ const STYLE: cytoscape.StylesheetStyle[] = [
     },
   },
   {
+    selector: 'node.info-selected',
+    style: { 'border-style': 'dashed', 'border-width': 3, 'border-color': '#56b4e9' },
+  },
+  {
+    // Root node when info-selected: keep gold but make dashed
+    selector: 'node.root.info-selected',
+    style: { 'border-style': 'dashed', 'border-color': '#f0a500' },
+  },
+  {
     selector: 'node.truncated',
     style: {
       shape: 'roundrectangle',
@@ -94,14 +105,46 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
+  const tokenRef = useRef(token);
+  const cacheRef = useRef<Map<string, ObjectData>>(new Map());
+  const clickedNodeIdRef = useRef<string | null>(null);
+  const [dialogData, setDialogData] = useState<ObjectData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Sync token ref and clear cache when token changes
+  useEffect(() => {
+    tokenRef.current = token;
+    cacheRef.current.clear();
+  }, [token]);
 
   // ---- init cytoscape -------------------------------------------------------
   useEffect(() => {
     if (!containerRef.current) return;
     const cy = cytoscape({ container: containerRef.current, style: STYLE, elements: [] });
     cyRef.current = cy;
+
+    cy.on('tap', 'node:not(.truncated)', (evt) => {
+      const node = evt.target as NodeSingular;
+      cy.nodes().removeClass('info-selected');
+      node.addClass('info-selected');
+      const nodeId = node.id();
+      clickedNodeIdRef.current = nodeId;
+
+      if (cacheRef.current.has(nodeId)) {
+        setDialogData(cacheRef.current.get(nodeId)!);
+        return;
+      }
+      const refPath = node.data('refPath') as string;
+      getObjects2({ objects: [{ ref: refPath }], no_data: 1 }, tokenRef.current)
+        .then(([data]) => {
+          if (data && clickedNodeIdRef.current === nodeId) {
+            cacheRef.current.set(nodeId, data);
+            setDialogData(data);
+          }
+        })
+        .catch(console.error);
+    });
 
     // Keep overlay label positions and scale in sync with graph on every render (pan/zoom/layout)
     cy.on('render', () => {
@@ -130,6 +173,8 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
     if (!cy) return;
 
     cy.elements().remove();
+    setDialogData(null);
+    clickedNodeIdRef.current = null;
     setLoadError(null);
     setLoading(true);
 
@@ -211,20 +256,23 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         refNodeData = infos.map((info) => info ? { name: info[1], type: info[2] } : null);
       }
 
+      // Cache root data now that we have it
+      cacheRef.current.set(ref, objData);
+
       // 5. Build graph in one batch
       const rootInfo = objData.info;
       cy.batch(() => {
         // Root node (middle row)
         cy.add({
           group: 'nodes',
-          data: { id: ref, name: rootInfo[1], type: rootInfo[2] },
+          data: { id: ref, refPath: ref, name: rootInfo[1], type: rootInfo[2] },
           classes: 'root',
         });
 
         // Referenced objects (bottom row): root → ref
         refArray.forEach((rRef, i) => {
           const d = refNodeData[i];
-          cy.add({ group: 'nodes', data: { id: rRef, name: d?.name ?? rRef, type: d?.type ?? '' } });
+          cy.add({ group: 'nodes', data: { id: rRef, refPath: `${ref};${rRef}`, name: d?.name ?? rRef, type: d?.type ?? '' } });
           cy.add({
             group: 'edges',
             data: { id: `${ref}→${rRef}`, source: ref, target: rRef },
@@ -234,7 +282,7 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         // Referrer objects (top row): referrer → root
         referrers.forEach((rinfo) => {
           const rRef = `${rinfo[6]}/${rinfo[0]}/${rinfo[4]}`;
-          cy.add({ group: 'nodes', data: { id: rRef, name: rinfo[1], type: rinfo[2] } });
+          cy.add({ group: 'nodes', data: { id: rRef, refPath: rRef, name: rinfo[1], type: rinfo[2] } });
           cy.add({ group: 'edges', data: { id: `${rRef}→${ref}`, source: rRef, target: ref } });
         });
 
@@ -279,6 +327,9 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         <span className="legend-item">Gold border = selected object</span>
         <span className="legend-item">Arrow tip = referenced object</span>
       </div>
+      {dialogData && (
+        <ObjectInfoDialog objData={dialogData} onClose={() => setDialogData(null)} />
+      )}
     </div>
   );
 }

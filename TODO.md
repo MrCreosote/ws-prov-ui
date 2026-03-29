@@ -2,6 +2,10 @@
 
 ## Features
 
+- **Idential objects**: Currently if the same object shows up multiple times in the DAG
+  it's not pointed out in any way. If the same object is detected, add a line or something to
+  show that. Probably needs some design thought to not make a mess.
+
 - **Version selection**: Currently always loads the latest version of a selected
   object. Add a version picker (using `get_object_history`) so users can browse
   provenance for any historical version.
