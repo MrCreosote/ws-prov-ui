@@ -492,6 +492,11 @@ body {
   color: #1a1a2e;
 }
 
+.obj-dialog__field a {
+  color: #1a5fa8;
+}
+.obj-dialog__field a:hover { text-decoration: underline; }
+
 .obj-dialog__field code {
   font-family: monospace;
   font-size: 0.82rem;

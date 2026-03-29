@@ -4,6 +4,9 @@ import type { ObjectData, ProvenanceAction, SubAction } from '../api/workspace';
 
 type Tab = 'general' | 'metadata' | 'provenance';
 
+// TODO: make these selectable when multi-env support is added
+const NARRATIVE_HOST = 'https://narrative.kbase.us';
+
 // ---- helpers ----------------------------------------------------------------
 
 function formatBytes(bytes: number): string {
@@ -32,6 +35,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function GeneralTab({ objData }: { objData: ObjectData }) {
   const [objId, name, type, saveDate, version, savedBy, wsId, wsName, checksum, size] = objData.info;
   const upa = `${wsId}/${objId}/${version}`;
+  const dataviewUrl = `${NARRATIVE_HOST}/legacy/dataview/${upa}`;
+  const typeUrl = `${NARRATIVE_HOST}/#spec/type/${type}`;
   const typeMatch = type.match(/^(.+?)-(\d+\.\d+)$/);
   const typeName = typeMatch?.[1] ?? type;
   const typeVer  = typeMatch?.[2];
@@ -40,21 +45,25 @@ function GeneralTab({ objData }: { objData: ObjectData }) {
     <dl className="obj-dialog__dl">
       <Field label="UPA"><code>{upa}</code></Field>
       <Field label="Type">
-        {typeName}{typeVer && <span className="obj-dialog__muted"> v{typeVer}</span>}
+        <a href={typeUrl} target="_blank" rel="noreferrer">{typeName}</a>
+        {typeVer && <span className="obj-dialog__muted"> v{typeVer}</span>}
       </Field>
-      <Field label="Name">{name}</Field>
+      <Field label="Name">
+        <a href={dataviewUrl} target="_blank" rel="noreferrer">{name}</a>
+      </Field>
       <Field label="Version">{version}</Field>
-      <Field label="Saved by">{savedBy}</Field>
+      <Field label="Saved by"><a href={`${NARRATIVE_HOST}/legacy/people/${savedBy}`} target="_blank" rel="noreferrer">{savedBy}</a></Field>
       <Field label="Save date">{formatDate(saveDate)}</Field>
       <Field label="Workspace">
-        {wsName} <span className="obj-dialog__muted">(ID: {wsId})</span>
+        <a href={`${NARRATIVE_HOST}/narrative/${wsId}`} target="_blank" rel="noreferrer">{wsName}</a>
+        <span className="obj-dialog__muted"> (ID: {wsId})</span>
       </Field>
       <Field label="Object ID">{objId}</Field>
       <Field label="Size">
         {formatBytes(size)} <span className="obj-dialog__muted">({size.toLocaleString()} bytes)</span>
       </Field>
       <Field label="Checksum"><code>{checksum}</code></Field>
-      <Field label="Creator">{objData.creator}</Field>
+      <Field label="Creator"><a href={`${NARRATIVE_HOST}/legacy/people/${objData.creator}`} target="_blank" rel="noreferrer">{objData.creator}</a></Field>
       <Field label="Created">{formatDate(objData.created)}</Field>
       {objData.copied && (
         <Field label="Copied from"><code>{objData.copied}</code></Field>
