@@ -11,6 +11,11 @@
   - Also think about if there's a better wsy to handle duplicate nodes. Collapsing the tree to
     a DAG gets super ugly
 
+- **Redraw stability**: When a node is expanded and the graph redraws, it's really easy
+  to lose your place in the graph. See if the redraw can be made more stable so the zoom
+  level doesn't change and the expanded node stays in the same place. Maybe temporarily
+  highlight the expanded node and its children
+
 - **Copied links** Show copied links in the graph. Probably needs some thought re layout
 
 - **Version selection**: Currently always loads the latest version of a selected
