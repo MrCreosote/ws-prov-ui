@@ -19,6 +19,13 @@ function parseType(fullType: string): string {
   return fullType.replace(/-[\d.]+$/, '');
 }
 
+/** Compare UPAs numerically: workspace id, then object id, then version */
+function compareUpa(a: string, b: string): number {
+  const [aws, aobj, aver] = a.split('/').map(Number);
+  const [bws, bobj, bver] = b.split('/').map(Number);
+  return aws - bws || aobj - bobj || aver - bver;
+}
+
 /** Insert zero-width spaces after _ and . so CSS can word-wrap at natural breakpoints */
 function formatName(name: string): string {
   return name.replace(/[_.]/g, (c) => c + '\u200B');
@@ -249,7 +256,7 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         const allRefUpas = [...new Set<string>([
           ...(objData?.refs ?? []),
           ...(objData?.provenance.flatMap((a) => a.resolved_ws_objects ?? []) ?? []),
-        ])];
+        ])].sort(compareUpa);
         if (allRefUpas.length === 0) return;
 
         let refNodeData: ({ name: string; type: string } | null)[] = allRefUpas.map(() => null);
@@ -355,7 +362,7 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         ...objData.refs,
         ...objData.provenance.flatMap((a) => a.resolved_ws_objects ?? []),
       ]);
-      const refArray = [...refSet];
+      const refArray = [...refSet].sort(compareUpa);
 
       // 3. Fetch referrers (top row)
       const referrerResult = await listReferencingObjects([{ ref }], token);
