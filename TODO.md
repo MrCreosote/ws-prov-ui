@@ -34,8 +34,3 @@
   `startafter` for pagination, or add type filter to prefix filter workspace side
   (may require new indexes)
 
-## Known limitations
-
-- Edge labels only show the first `ProvenanceAction`. Objects created by
-  multi-step pipelines may have multiple actions that are visible in the panel
-  but only the first is shown on the edge.

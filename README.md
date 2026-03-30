@@ -1,6 +1,8 @@
 # KBase Workspace Provenance Browser
 
-A demo web app for exploring the provenance graph of objects in the [KBase Workspace Service](https://kbase.us/services/ws). Hosted at **https://mrcreosote.github.io/ws-prov-ui/**.
+A demo web app for exploring the provenance graph of objects in the 
+[KBase Workspace Service](https://github.com/kbase/workspace_deluxe).
+Hosted at **https://mrcreosote.github.io/ws-prov-ui/**.
 
 ## What it does
 
