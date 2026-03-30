@@ -117,6 +117,8 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
   const clickedNodeIdRef = useRef<string | null>(null);
   const expandedSetRef = useRef<Set<string>>(new Set());
   const overlayElsRef = useRef<Map<string, HTMLElement>>(new Map());
+  // Tracks the above-node expand button container for upstream-expandable nodes
+  const overlayAboveElsRef = useRef<Map<string, HTMLElement>>(new Map());
   const [dialogData, setDialogData] = useState<ObjectData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -130,7 +132,7 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
   // ---- init cytoscape -------------------------------------------------------
   useEffect(() => {
     if (!containerRef.current) return;
-    const cy = cytoscape({ container: containerRef.current, style: STYLE, elements: [] });
+    const cy = cytoscape({ container: containerRef.current, style: STYLE, elements: [], autoungrabify: true });
     cyRef.current = cy;
 
     cy.on('tap', 'node:not(.truncated)', (evt) => {
@@ -161,13 +163,25 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
       if (cy.destroyed()) return;
       const zoom = cy.zoom();
       cy.nodes(':not(.truncated)').forEach((node) => {
-        const el = overlayElsRef.current.get(node.id());
-        if (!el) return;
         const pos = node.renderedPosition();
         const r = node.renderedHeight() / 2;
-        el.style.left = `${Math.round(pos.x - 75 * zoom)}px`;
-        el.style.top = `${Math.round(pos.y + r + 6 * zoom)}px`;
-        el.style.transform = `scale(${zoom})`;
+
+        // Below-node label
+        const el = overlayElsRef.current.get(node.id());
+        if (el) {
+          el.style.left = `${Math.round(pos.x - 75 * zoom)}px`;
+          el.style.top = `${Math.round(pos.y + r + 6 * zoom)}px`;
+          el.style.transform = `scale(${zoom})`;
+        }
+
+        // Above-node expand button (upstream-expandable nodes only)
+        const aboveEl = overlayAboveElsRef.current.get(node.id());
+        if (aboveEl) {
+          const btnH = aboveEl.offsetHeight || 20;
+          aboveEl.style.left = `${Math.round(pos.x - 15 * zoom)}px`;
+          aboveEl.style.top = `${Math.round(pos.y - r - (btnH + 4) * zoom)}px`;
+          aboveEl.style.transform = `scale(${zoom})`;
+        }
       });
     });
 
@@ -188,14 +202,27 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
 
     if (overlayRef.current) overlayRef.current.innerHTML = '';
     overlayElsRef.current.clear();
+    overlayAboveElsRef.current.clear();
 
     const ref = rootObject.value;
     let cancelled = false;
 
-    /** Append a styled label div to the overlay for a non-truncated node */
-    function addOverlayLabel(id: string, name: string, type: string, upa: string, expandable: boolean) {
+    /**
+     * Append a styled label div below the node.
+     * expandDirection:
+     *   'down' — expand button at the top of the label block (downstream refs)
+     *   'up'   — expand button in a separate div above the node dot (upstream referrers)
+     *   'none' — no expand button
+     */
+    function addOverlayLabel(
+      id: string, name: string, type: string, upa: string,
+      expandDirection: 'up' | 'down' | 'none',
+      expandRefPath?: string,  // refPath to use for the expand button; defaults to id
+    ) {
       const overlay = overlayRef.current;
       if (!overlay) return;
+
+      // Below-node label element
       const el = document.createElement('div');
       el.setAttribute('data-nid', id);
       el.className = 'node-overlay';
@@ -208,93 +235,167 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
       const wsEl = document.createElement('span');
       wsEl.className = 'node-overlay__ws';
       wsEl.textContent = upa;
-      if (expandable) {
+
+      if (expandDirection === 'down') {
         const btn = document.createElement('button');
         btn.className = 'expand-btn';
         btn.textContent = '⊕';
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
-          expandNode(id, id);  // node ID is the refPath
+          expandNode(id, id, 'down');
         });
         el.appendChild(btn);
       }
+
       el.appendChild(nameEl);
       el.appendChild(typeEl);
       el.appendChild(wsEl);
       overlayElsRef.current.set(id, el);
       overlay.appendChild(el);
+
+      // Above-node element for upstream expand button
+      if (expandDirection === 'up') {
+        const aboveEl = document.createElement('div');
+        aboveEl.className = 'node-expand-above';
+        const btn = document.createElement('button');
+        btn.className = 'expand-btn';
+        btn.textContent = '⊕';
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          expandNode(id, expandRefPath ?? id, 'up');
+        });
+        aboveEl.appendChild(btn);
+        overlayAboveElsRef.current.set(id, aboveEl);
+        overlay.appendChild(aboveEl);
+      }
     }
 
-    /** Expand a node's downstream references. */
-    async function expandNode(nodeId: string, refPath: string) {
-      if (expandedSetRef.current.has(nodeId)) return;
-      expandedSetRef.current.add(nodeId);
+    /** Expand a node upstream (find referrers) or downstream (find refs). */
+    async function expandNode(nodeId: string, refPath: string, direction: 'up' | 'down') {
+      const expandKey = `${direction}:${nodeId}`;
+      if (expandedSetRef.current.has(expandKey)) return;
+      expandedSetRef.current.add(expandKey);
 
-      const btn = overlayElsRef.current.get(nodeId)?.querySelector<HTMLButtonElement>('.expand-btn');
+      const containerEl = direction === 'up'
+        ? overlayAboveElsRef.current.get(nodeId)
+        : overlayElsRef.current.get(nodeId);
+      const btn = containerEl?.querySelector<HTMLButtonElement>('.expand-btn');
       if (btn) { btn.disabled = true; btn.textContent = '…'; }
 
       try {
-        const upa = nodeId.includes(';') ? nodeId.split(';').pop()! : nodeId;
+        if (direction === 'down') {
+          // ---- downstream: expand references from this node ----------------
+          const upa = nodeId.includes(';') ? nodeId.split(';').pop()! : nodeId;
 
-        // Prefer cached data — same object regardless of which ref-chain path reached it.
-        // This avoids re-fetching via a deep chain that may not be a valid access path.
-        let objData = cacheRef.current.get(upa) ?? null;
-        if (!objData) {
-          const [fetched] = await getObjects2(
-            { objects: [{ ref: refPath }], no_data: 1 },
+          let objData = cacheRef.current.get(upa) ?? null;
+          if (!objData) {
+            const [fetched] = await getObjects2(
+              { objects: [{ ref: refPath }], no_data: 1 },
+              tokenRef.current,
+            );
+            objData = fetched ?? null;
+            if (objData) cacheRef.current.set(upa, objData);
+          }
+
+          if (btn) btn.textContent = '⊘';
+
+          const _cy = cyRef.current;
+          if (!_cy || _cy.destroyed()) return;
+
+          const allRefUpas = [...new Set<string>([
+            ...(objData?.refs ?? []),
+            ...(objData?.provenance.flatMap((a) => a.resolved_ws_objects ?? []) ?? []),
+          ])].sort(compareUpa);
+          if (allRefUpas.length === 0) return;
+
+          let refNodeData: ({ name: string; type: string } | null)[] = allRefUpas.map(() => null);
+          const { infos } = await getObjectInfo3(
+            { objects: allRefUpas.map((r) => ({ ref: `${refPath};${r}` })), ignoreErrors: 1 },
             tokenRef.current,
           );
-          objData = fetched ?? null;
-          if (objData) cacheRef.current.set(upa, objData);
-        }
+          if (!_cy.destroyed()) {
+            refNodeData = infos.map((info) => info ? { name: info[1], type: info[2] } : null);
+          } else {
+            return;
+          }
+          _cy.batch(() => {
+            allRefUpas.forEach((rUpa, i) => {
+              const d = refNodeData[i];
+              const childId = `${refPath};${rUpa}`;
+              if (!_cy.nodes().filter((n) => n.id() === childId).length) {
+                _cy.add({ group: 'nodes', data: { id: childId, refPath: childId, upa: rUpa, name: d?.name ?? rUpa, type: d?.type ?? '' } });
+              }
+              if (!_cy.edges().filter((e) => e.id() === `${nodeId}→${childId}`).length) {
+                _cy.add({ group: 'edges', data: { id: `${nodeId}→${childId}`, source: nodeId, target: childId } });
+              }
+            });
+          });
 
-        if (btn) btn.textContent = '⊘';
-
-        const _cy = cyRef.current;
-        if (!_cy || _cy.destroyed()) return;
-
-        const allRefUpas = [...new Set<string>([
-          ...(objData?.refs ?? []),
-          ...(objData?.provenance.flatMap((a) => a.resolved_ws_objects ?? []) ?? []),
-        ])].sort(compareUpa);
-        if (allRefUpas.length === 0) return;
-
-        let refNodeData: ({ name: string; type: string } | null)[] = allRefUpas.map(() => null);
-        const { infos } = await getObjectInfo3(
-          { objects: allRefUpas.map((r) => ({ ref: `${refPath};${r}` })), ignoreErrors: 1 },
-          tokenRef.current,
-        );
-        if (!_cy.destroyed()) {
-          refNodeData = infos.map((info) => info ? { name: info[1], type: info[2] } : null);
-        } else {
-          return;
-        }
-        _cy.batch(() => {
           allRefUpas.forEach((rUpa, i) => {
             const d = refNodeData[i];
             const childId = `${refPath};${rUpa}`;
-            _cy.add({ group: 'nodes', data: { id: childId, refPath: childId, upa: rUpa, name: d?.name ?? rUpa, type: d?.type ?? '' } });
-            _cy.add({ group: 'edges', data: { id: `${nodeId}→${childId}`, source: nodeId, target: childId } });
+            if (!overlayElsRef.current.has(childId)) {
+              addOverlayLabel(childId, d?.name ?? rUpa, d?.type ?? '', rUpa, 'down');
+            }
           });
-        });
 
-        allRefUpas.forEach((rUpa, i) => {
-          const d = refNodeData[i];
-          const childId = `${refPath};${rUpa}`;
-          addOverlayLabel(childId, d?.name ?? rUpa, d?.type ?? '', rUpa, true);
-        });
+        } else {
+          // ---- upstream: find objects that reference this node ---------------
+          const referrerResult = await listReferencingObjects([{ ref: refPath }], tokenRef.current);
 
-        _cy.layout(LAYOUT as cytoscape.LayoutOptions).run();
-        requestAnimationFrame(updateEdgeStyle);
+          if (btn) btn.textContent = '⊘';
+
+          const _cy = cyRef.current;
+          if (!_cy || _cy.destroyed()) return;
+
+          const allReferrers = [...(referrerResult[0] ?? [])].sort((a, b) =>
+            compareUpa(`${a[6]}/${a[0]}/${a[4]}`, `${b[6]}/${b[0]}/${b[4]}`),
+          );
+          if (allReferrers.length === 0) return;
+
+          const referrers = allReferrers.slice(0, REFERRER_LIMIT);
+          const truncatedCount = allReferrers.length - referrers.length;
+
+          // Each referrer gets a unique path-based ID (nodeId←upa), mirroring how
+          // downstream uses nodeId;upa — so the same physical object can appear
+          // multiple times if discovered via different expansion paths.
+          _cy.batch(() => {
+            referrers.forEach((rinfo) => {
+              const rRef = `${rinfo[6]}/${rinfo[0]}/${rinfo[4]}`;
+              const childId = `${nodeId}←${rRef}`;
+              _cy.add({ group: 'nodes', data: { id: childId, refPath: rRef, upa: rRef, name: rinfo[1], type: rinfo[2] } });
+              _cy.add({ group: 'edges', data: { id: `${childId}→${nodeId}`, source: childId, target: nodeId } });
+            });
+            if (truncatedCount > 0) {
+              const moreId = `${nodeId}__more_up`;
+              _cy.add({ group: 'nodes', data: { id: moreId, label: `+${truncatedCount} more` }, classes: 'truncated' });
+              _cy.add({ group: 'edges', data: { id: `${moreId}→${nodeId}`, source: moreId, target: nodeId } });
+            }
+          });
+
+          referrers.forEach((rinfo) => {
+            const rRef = `${rinfo[6]}/${rinfo[0]}/${rinfo[4]}`;
+            const childId = `${nodeId}←${rRef}`;
+            // Pass rRef as expandRefPath so the expand button fetches by direct UPA
+            addOverlayLabel(childId, rinfo[1], rinfo[2], rRef, 'up', rRef);
+          });
+        }
+
+        const _cy = cyRef.current;
+        if (_cy && !_cy.destroyed()) {
+          _cy.layout(LAYOUT as cytoscape.LayoutOptions).run();
+          requestAnimationFrame(updateEdgeStyle);
+        }
 
       } catch (e) {
         console.error('expand failed', e);
-        expandedSetRef.current.delete(nodeId);
+        expandedSetRef.current.delete(expandKey);
         if (btn) { btn.textContent = '⊕'; btn.disabled = false; }
       }
     }
 
-    /** Set source-endpoint per rank and add vertical stems for sub-max-height nodes. */
+    /** Set source-endpoint per rank, add vertical stems for sub-max-height nodes,
+     *  and offset target-endpoints for nodes with above-node expand buttons. */
     function updateEdgeStyle() {
       const _cy = cyRef.current;
       if (!_cy || _cy.destroyed()) return;
@@ -309,12 +410,6 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
 
       // For each rank: use the tallest label height to set a shared source-endpoint,
       // and add a vertical stem on shorter nodes to bridge the gap.
-      //
-      // Overlay local coords (before scale(zoom)):
-      //   label occupies 0 → h px; tail gap ends at h+4; row arrow-start at maxH+4.
-      //   stem: top = h+4, height = maxH−h.
-      // With scale(zoom) applied, these DOM-px values equal graph units, so the
-      // stem aligns exactly with the cytoscape edge geometry.
       byRank.forEach((nodes) => {
         const heights = nodes.map((node) => {
           const el = overlayElsRef.current.get(node.id());
@@ -344,6 +439,18 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
           }
         });
       });
+
+      // For nodes with upstream expand buttons, shift the incoming arrowhead
+      // upward to clear the button above the node dot.
+      _cy.nodes(':not(.truncated)').forEach((node) => {
+        const aboveEl = overlayAboveElsRef.current.get(node.id());
+        if (aboveEl) {
+          const btnH = aboveEl.offsetHeight || 20;
+          // radius (11) + gap (4) + button height — all in graph units (= DOM px at zoom 1)
+          const upOffset = Math.ceil(11 + 4 + btnH);
+          node.incomers('edge').style({ 'target-endpoint': `0px -${upOffset}px` });
+        }
+      });
     }
 
     async function load() {
@@ -367,7 +474,9 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
       // 3. Fetch referrers (top row)
       const referrerResult = await listReferencingObjects([{ ref }], token);
       if (cancelled || cy.destroyed()) return;
-      const allReferrers = referrerResult[0] ?? [];
+      const allReferrers = [...(referrerResult[0] ?? [])].sort((a, b) =>
+        compareUpa(`${a[6]}/${a[0]}/${a[4]}`, `${b[6]}/${b[0]}/${b[4]}`),
+      );
       const referrers = allReferrers.slice(0, REFERRER_LIMIT);
       const truncatedCount = allReferrers.length - referrers.length;
 
@@ -382,14 +491,14 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         refNodeData = infos.map((info) => info ? { name: info[1], type: info[2] } : null);
       }
 
-      // Cache root data and mark it as expanded
+      // Cache root data and mark it as downstream-expanded (refs are already shown)
       cacheRef.current.set(ref, objData);
-      expandedSetRef.current.add(ref);
+      expandedSetRef.current.add(`down:${ref}`);
 
       // 5. Build graph in one batch
       const rootInfo = objData.info;
       cy.batch(() => {
-        // Root node (middle row)
+        // Root node (middle row) — no expand buttons
         cy.add({
           group: 'nodes',
           data: { id: ref, refPath: ref, upa: ref, name: rootInfo[1], type: rootInfo[2] },
@@ -408,10 +517,13 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         });
 
         // Referrer objects (top row): referrer → root
+        // ID uses ref←upa so the path always starts at the selected node,
+        // mirroring how downstream uses ref;upa.
         referrers.forEach((rinfo) => {
           const rRef = `${rinfo[6]}/${rinfo[0]}/${rinfo[4]}`;
-          cy.add({ group: 'nodes', data: { id: rRef, refPath: rRef, upa: rRef, name: rinfo[1], type: rinfo[2] }, classes: 'referrer' });
-          cy.add({ group: 'edges', data: { id: `${rRef}→${ref}`, source: rRef, target: ref } });
+          const referrerId = `${ref}←${rRef}`;
+          cy.add({ group: 'nodes', data: { id: referrerId, refPath: rRef, upa: rRef, name: rinfo[1], type: rinfo[2] }, classes: 'referrer' });
+          cy.add({ group: 'edges', data: { id: `${referrerId}→${ref}`, source: referrerId, target: ref } });
         });
 
         // "+N more" placeholder if referrers were truncated
@@ -425,13 +537,18 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
       // Add overlay labels (must happen before layout so positions are ready on first render)
       cy.nodes(':not(.truncated)').forEach((node) => {
         const nodeId = node.id();
-        const expandable = nodeId !== ref && !node.hasClass('referrer');
-        addOverlayLabel(nodeId, node.data('name') as string, node.data('type') as string, node.data('upa') as string, expandable);
+        let expandDirection: 'up' | 'down' | 'none';
+        if (nodeId === ref) expandDirection = 'none';
+        else if (node.hasClass('referrer')) expandDirection = 'up';
+        else expandDirection = 'down';
+        // Pass refPath from node data so the expand button uses the bare UPA for
+        // upstream nodes (id ≠ refPath there), and the full chain for downstream.
+        addOverlayLabel(nodeId, node.data('name') as string, node.data('type') as string, node.data('upa') as string, expandDirection, node.data('refPath') as string);
       });
 
       cy.layout(LAYOUT as cytoscape.LayoutOptions).run();
 
-      // After the first paint, measure label heights and set source-endpoint
+      // After the first paint, measure label heights and set source/target endpoints
       requestAnimationFrame(updateEdgeStyle);
     }
 

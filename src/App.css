@@ -280,6 +280,16 @@ body {
 .expand-btn:hover:not(:disabled) { opacity: 1; }
 .expand-btn:disabled { color: #888; cursor: default; }
 
+/* Above-node container for upstream expand button */
+.node-expand-above {
+  position: absolute;
+  width: 30px;
+  text-align: center;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.node-expand-above .expand-btn { margin: 0 auto; }
+
 /* ---- Graph loading -------------------------------------------------------- */
 
 .graph-loading {
