@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ObjectData, ProvenanceAction, SubAction } from '../api/workspace';
 import { getWorkspaceInfo } from '../api/workspace';
+import { getAppBriefInfo } from '../api/catalog';
 
 // Module-level cache: ws_id → narrative_nice_name (null if not a narrative)
 const wsNiceNameCache = new Map<number, string | null>();
@@ -154,7 +155,11 @@ function SubActionsDisplay({ subactions }: { subactions?: SubAction[] }) {
       <dd>
         {subactions.map((sa, i) => (
           <div key={i} className="obj-dialog__subaction">
-            <span className="obj-dialog__subaction-name">{sa.name ?? '(unnamed)'}</span>
+            <span className="obj-dialog__subaction-name">
+              {sa.name
+                ? <a href={`${NARRATIVE_HOST}/legacy/catalog/modules/${sa.name}`} target="_blank" rel="noreferrer">{sa.name}</a>
+                : '(unnamed)'}
+            </span>
             {sa.ver        && <div className="obj-dialog__subfield"><span className="obj-dialog__subfield-label">Version</span> {sa.ver}</div>}
             {sa.code_url   && <div className="obj-dialog__subfield"><span className="obj-dialog__subfield-label">Code</span> <a href={sa.code_url} target="_blank" rel="noreferrer">{sa.code_url}</a></div>}
             {sa.commit     && <div className="obj-dialog__subfield"><span className="obj-dialog__subfield-label">Commit</span> <code>{sa.commit}</code></div>}
@@ -166,6 +171,51 @@ function SubActionsDisplay({ subactions }: { subactions?: SubAction[] }) {
   );
 }
 
+// ---- Catalog linkout helpers ------------------------------------------------
+
+interface CatalogAppRefProps {
+  service: string;
+  method?: string;
+  serviceVer?: string;
+}
+
+/** Renders linked Module + App rows, fetching the human-readable app name async. */
+function CatalogAppRef({ service, method, serviceVer }: CatalogAppRefProps) {
+  const [appName, setAppName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!method) return;
+    const key = `${service}/${method}`;
+    getAppBriefInfo(key).then((info) => { if (info) setAppName(info.name); }).catch(() => {});
+  }, [service, method]);
+
+  const moduleUrl = `${NARRATIVE_HOST}/legacy/catalog/modules/${service}`;
+  const appUrl = method
+    ? `${NARRATIVE_HOST}/legacy/catalog/apps/${service}/${method}/${serviceVer ?? ''}`
+    : null;
+
+  return (
+    <>
+      <div className="obj-dialog__field">
+        <dt>Module</dt>
+        <dd><a href={moduleUrl} target="_blank" rel="noreferrer">{service}</a></dd>
+      </div>
+      {appUrl && (
+        <div className="obj-dialog__field">
+          <dt>App</dt>
+          <dd><a href={appUrl} target="_blank" rel="noreferrer">{appName ?? method}</a></dd>
+        </div>
+      )}
+      {method && (
+        <div className="obj-dialog__field">
+          <dt>Method</dt>
+          <dd><code>{method}</code></dd>
+        </div>
+      )}
+    </>
+  );
+}
+
 function ActionDetail({ action, i, showTitle }: { action: ProvenanceAction; i: number; showTitle: boolean }) {
   return (
     <section className="obj-dialog__prov-action">
@@ -174,9 +224,14 @@ function ActionDetail({ action, i, showTitle }: { action: ProvenanceAction; i: n
         <ProvField label="Time"                    value={action.time} />
         <ProvField label="Caller"                  value={action.caller} />
         <ProvField label="Description"             value={action.description} />
-        <ProvField label="Service"                 value={action.service} />
+        {action.service
+          ? <CatalogAppRef service={action.service} method={action.method} serviceVer={action.service_ver} />
+          : <>
+              <ProvField label="Service" value={action.service} />
+              <ProvField label="Method"  value={action.method} />
+            </>
+        }
         <ProvField label="Service version"         value={action.service_ver} />
-        <ProvField label="Method"                  value={action.method} />
         <ProvField label="Method params"           value={action.method_params} />
         <ProvField label="Script"                  value={action.script} />
         <ProvField label="Script version"          value={action.script_ver} />
