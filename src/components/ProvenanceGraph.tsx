@@ -97,6 +97,21 @@ const STYLE: cytoscape.StylesheetStyle[] = [
       'target-arrow-color': '#888',
     },
   },
+  {
+    selector: 'node.dup-hover',
+    style: { 'border-style': 'solid', 'border-width': 3, 'border-color': '#9b59b6' },
+  },
+  {
+    selector: 'edge.dup-link',
+    style: {
+      'curve-style': 'straight',
+      'line-style': 'dashed',
+      'line-dash-pattern': [6, 4],
+      width: 1.5,
+      'line-color': '#9b59b6',
+      'target-arrow-shape': 'none',
+    },
+  },
 ];
 
 const REFERRER_LIMIT = 50;
@@ -156,6 +171,28 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
           }
         })
         .catch(console.error);
+    });
+
+    // Highlight duplicate nodes (same UPA) on mouseover with purple outlines + dashed links
+    cy.on('mouseover', 'node:not(.truncated)', (evt) => {
+      const node = evt.target as NodeSingular;
+      const upa = node.data('upa') as string;
+      if (!upa) return;
+      const dupes = cy.nodes(':not(.truncated)').filter((n) => n.data('upa') === upa);
+      if (dupes.length < 2) return;
+      dupes.addClass('dup-hover');
+      dupes.forEach((a, i) => {
+        dupes.forEach((b, j) => {
+          if (i < j) {
+            cy.add({ group: 'edges', classes: 'dup-link', data: { id: `dup-${i}-${j}`, source: a.id(), target: b.id() } });
+          }
+        });
+      });
+    });
+
+    cy.on('mouseout', 'node:not(.truncated)', () => {
+      cy.nodes().removeClass('dup-hover');
+      cy.edges('.dup-link').remove();
     });
 
     // Keep overlay label positions and scale in sync with graph on every render (pan/zoom/layout)
@@ -383,6 +420,10 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
 
         const _cy = cyRef.current;
         if (_cy && !_cy.destroyed()) {
+          // Remove transient dup-link edges before layout so dagre doesn't treat
+          // them as real constraints and misassign node ranks.
+          _cy.edges('.dup-link').remove();
+          _cy.nodes().removeClass('dup-hover');
           _cy.layout(LAYOUT as cytoscape.LayoutOptions).run();
           requestAnimationFrame(updateEdgeStyle);
         }
@@ -420,7 +461,7 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
 
         const offset = Math.ceil(21 + maxH);
         nodes.forEach((node, i) => {
-          node.outgoers('edge').style({ 'source-endpoint': `0px ${offset}px` });
+          node.outgoers('edge:not(.dup-link)').style({ 'source-endpoint': `0px ${offset}px` });
 
           const el = overlayElsRef.current.get(node.id());
           if (!el) return;
@@ -429,7 +470,7 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
           el.querySelector('.node-stem')?.remove();
 
           const h = heights[i];
-          if (h > 0 && maxH - h > 1 && node.outdegree() > 0) {
+          if (h > 0 && maxH - h > 1 && node.outgoers('edge:not(.dup-link)').length > 0) {
             const stem = document.createElement('div');
             stem.className = 'node-stem';
             stem.style.cssText =
@@ -448,7 +489,7 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
           const btnH = aboveEl.offsetHeight || 20;
           // radius (11) + gap (4) + button height — all in graph units (= DOM px at zoom 1)
           const upOffset = Math.ceil(11 + 4 + btnH);
-          node.incomers('edge').style({ 'target-endpoint': `0px -${upOffset}px` });
+          node.incomers('edge:not(.dup-link)').style({ 'target-endpoint': `0px -${upOffset}px` });
         }
       });
     }
