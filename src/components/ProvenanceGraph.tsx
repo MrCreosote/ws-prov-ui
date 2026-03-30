@@ -121,28 +121,43 @@ const REFERRER_LIMIT = 50;
 interface Props {
   token: string;
   rootObject: ObjOption;
+  onReroot: (opt: ObjOption) => void;
 }
 
-export function ProvenanceGraph({ token, rootObject }: Props) {
+export function ProvenanceGraph({ token, rootObject, onReroot }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const tokenRef = useRef(token);
+  const onRerootRef = useRef(onReroot);
   const cacheRef = useRef<Map<string, ObjectData>>(new Map());
   const clickedNodeIdRef = useRef<string | null>(null);
   const expandedSetRef = useRef<Set<string>>(new Set());
   const overlayElsRef = useRef<Map<string, HTMLElement>>(new Map());
   // Tracks the above-node expand button container for upstream-expandable nodes
   const overlayAboveElsRef = useRef<Map<string, HTMLElement>>(new Map());
+  // Tracks the right-of-node reroot button container
+  const overlayRightElsRef = useRef<Map<string, HTMLElement>>(new Map());
   const [dialogData, setDialogData] = useState<ObjectData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [bannerMsg, setBannerMsg] = useState<string | null>(null);
 
   // Sync token ref and clear cache when token changes
   useEffect(() => {
     tokenRef.current = token;
     cacheRef.current.clear();
   }, [token]);
+
+  // Keep onRerootRef current so DOM handlers always call the latest callback
+  useEffect(() => { onRerootRef.current = onReroot; }, [onReroot]);
+
+  // Auto-dismiss the inaccessible-node banner
+  useEffect(() => {
+    if (!bannerMsg) return;
+    const t = setTimeout(() => setBannerMsg(null), 3500);
+    return () => clearTimeout(t);
+  }, [bannerMsg]);
 
   // ---- init cytoscape -------------------------------------------------------
   useEffect(() => {
@@ -219,6 +234,15 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
           aboveEl.style.top = `${Math.round(pos.y - r - (btnH + 4) * zoom)}px`;
           aboveEl.style.transform = `scale(${zoom})`;
         }
+
+        // Right-of-node reroot button
+        const rightEl = overlayRightElsRef.current.get(node.id());
+        if (rightEl) {
+          const btnH = rightEl.offsetHeight || 22;
+          rightEl.style.left = `${Math.round(pos.x + r + 4 * zoom)}px`;
+          rightEl.style.top  = `${Math.round(pos.y - (btnH * zoom) / 2)}px`;
+          rightEl.style.transform = `scale(${zoom})`;
+        }
       });
     });
 
@@ -240,6 +264,8 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
     if (overlayRef.current) overlayRef.current.innerHTML = '';
     overlayElsRef.current.clear();
     overlayAboveElsRef.current.clear();
+    overlayRightElsRef.current.clear();
+    setBannerMsg(null);
 
     const ref = rootObject.value;
     let cancelled = false;
@@ -304,6 +330,60 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
         aboveEl.appendChild(btn);
         overlayAboveElsRef.current.set(id, aboveEl);
         overlay.appendChild(aboveEl);
+      }
+
+      // Right-of-node reroot button (all non-root nodes)
+      if (expandDirection !== 'none') {
+        const rightEl = document.createElement('div');
+        rightEl.className = 'node-action-right';
+        const rerootBtn = document.createElement('button');
+        rerootBtn.className = 'reroot-btn';
+        rerootBtn.title = 'Make this the root object';
+        rerootBtn.textContent = '⊙';
+
+        rerootBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          rerootBtn.disabled = true;
+          rerootBtn.textContent = '…';
+
+          if (expandDirection === 'up') {
+            // Upstream nodes are always directly accessible — build ObjOption from node data.
+            const [, , verStr] = upa.split('/');
+            onRerootRef.current({
+              value: upa, name, type,
+              version: parseInt(verStr, 10),
+              saveDate: '', savedBy: '', sizeBytes: 0, label: name,
+            });
+          } else {
+            // Downstream nodes may require a ref chain. Check bare-UPA accessibility first.
+            try {
+              const { infos } = await getObjectInfo3(
+                { objects: [{ ref: upa }], ignoreErrors: 1 },
+                tokenRef.current,
+              );
+              const info = infos[0];
+              if (!info) {
+                setBannerMsg('This object is not directly accessible — cannot reroot here.');
+                rerootBtn.disabled = false;
+                rerootBtn.textContent = '⊙';
+                return;
+              }
+              onRerootRef.current({
+                value: upa,
+                name: info[1], type: info[2], version: info[4],
+                saveDate: new Date(info[3]).toLocaleString(),
+                savedBy: info[5], sizeBytes: info[9], label: info[1],
+              });
+            } catch {
+              rerootBtn.disabled = false;
+              rerootBtn.textContent = '⊙';
+            }
+          }
+        });
+
+        rightEl.appendChild(rerootBtn);
+        overlayRightElsRef.current.set(id, rightEl);
+        overlay.appendChild(rightEl);
       }
     }
 
@@ -611,6 +691,7 @@ export function ProvenanceGraph({ token, rootObject }: Props) {
       <div ref={overlayRef} className="graph-overlay" />
       {loading && <div className="graph-loading">Loading…</div>}
       {loadError && <div className="graph-error">{loadError}</div>}
+      {bannerMsg && <div className="graph-notice">{bannerMsg}</div>}
       <div className="graph-legend">
         <span className="legend-item">Gold border = selected object</span>
         <span className="legend-item">Arrow tip = referenced object</span>

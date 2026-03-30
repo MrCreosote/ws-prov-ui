@@ -68,7 +68,11 @@ export default function App() {
 
       <main className="app-main">
         {object ? (
-          <ProvenanceGraph token={token} rootObject={object} />
+          <ProvenanceGraph
+            token={token}
+            rootObject={object}
+            onReroot={(opt) => setObject(opt)}
+          />
         ) : (
           <div className="app-empty">
             {!workspace

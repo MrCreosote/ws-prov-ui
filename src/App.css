@@ -290,6 +290,27 @@ body {
 }
 .node-expand-above .expand-btn { margin: 0 auto; }
 
+/* Right-of-node container for reroot button */
+.node-action-right {
+  position: absolute;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.reroot-btn {
+  display: block;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  color: #4a90d9;
+  pointer-events: auto;
+}
+.reroot-btn:hover:not(:disabled) { color: #1a5fa8; }
+.reroot-btn:disabled { color: #aaa; cursor: default; }
+
 /* ---- Graph loading -------------------------------------------------------- */
 
 .graph-loading {
@@ -299,6 +320,25 @@ body {
   transform: translate(-50%, -50%);
   color: #666;
   font-size: 1rem;
+  pointer-events: none;
+}
+
+/* ---- Graph notice (temporary, auto-dismissing) ---------------------------- */
+
+.graph-notice {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff3cd;
+  border: 1px solid #f0a500;
+  color: #856404;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 4px;
+  max-width: 80%;
+  word-break: break-all;
+  z-index: 10;
   pointer-events: none;
 }
 

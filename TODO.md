@@ -8,6 +8,10 @@
   requiring hover. This is feasible without forcing a graph relayout: duplicate edges can
   be added/removed at any time without calling `layout().run()`, so node positions stay
   fixed.
+  - Also think about if there's a better wsy to handle duplicate nodes. Collapsing the tree to
+    a DAG gets super ugly
+
+- **Copied links** Show copied links in the graph. Probably needs some thought re layout
 
 - **Version selection**: Currently always loads the latest version of a selected
   object. Add a version picker (using `get_object_history`) so users can browse
