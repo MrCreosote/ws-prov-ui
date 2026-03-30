@@ -74,16 +74,18 @@ const DEBOUNCE_MS = 300;
 interface Props {
   token: string;
   workspace: WorkspaceInfo | null;
+  initialObjUpa?: string | null;
   onSelect: (obj: ObjOption | null) => void;
 }
 
-export function ObjectSelector({ token, workspace, onSelect }: Props) {
+export function ObjectSelector({ token, workspace, initialObjUpa, onSelect }: Props) {
   const [options, setOptions] = useState<ObjOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ObjOption | null>(null);
   const [copied, setCopied] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialAppliedRef = useRef(false);
 
   function copyName() {
     const name = selected?.name ?? '';
@@ -103,7 +105,33 @@ export function ObjectSelector({ token, workspace, onSelect }: Props) {
 
     setLoading(true);
     listObjects({ ids: [workspace[0]], limit: 1000 }, token)
-      .then((infos) => setOptions(infos.map(infoToOption)))
+      .then(async (infos) => {
+        const opts = infos.map(infoToOption);
+        setOptions(opts);
+        if (!initialAppliedRef.current && initialObjUpa) {
+          const match = opts.find((o) => o.value === initialObjUpa);
+          if (match) {
+            initialAppliedRef.current = true;
+            setSelected(match);
+            onSelect(match);
+          } else {
+            // Not in prefill list — fetch directly by UPA
+            try {
+              const { infos: fetched } = await getObjectInfo3(
+                { objects: [{ ref: initialObjUpa }], ignoreErrors: 1 },
+                token,
+              );
+              const info = fetched[0];
+              if (info) {
+                const opt = infoToOption(info);
+                initialAppliedRef.current = true;
+                setSelected(opt);
+                onSelect(opt);
+              }
+            } catch { /* ignore */ }
+          }
+        }
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps

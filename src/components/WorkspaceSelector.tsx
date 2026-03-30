@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Select, { type SingleValue, type StylesConfig, type OptionProps, components } from 'react-select';
 import { listWorkspaceInfo, type WorkspaceInfo } from '../api/workspace';
 
@@ -52,16 +52,18 @@ const selectStyles: StylesConfig<WsOption> = {
 interface Props {
   token: string;
   username: string | null;
+  initialWsId?: number | null;
   onSelect: (ws: WorkspaceInfo | null) => void;
 }
 
-export function WorkspaceSelector({ token, username, onSelect }: Props) {
+export function WorkspaceSelector({ token, username, initialWsId, onSelect }: Props) {
   const [options, setOptions] = useState<WsOption[]>([]);
   const [ownOnly, setOwnOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<WsOption | null>(null);
   const [copied, setCopied] = useState(false);
+  const initialAppliedRef = useRef(false);
 
   function copyName() {
     const name = selected ? (selected.niceName || selected.wsName) : '';
@@ -82,7 +84,18 @@ export function WorkspaceSelector({ token, username, onSelect }: Props) {
     setLoading(true);
     setError(null);
     listWorkspaceInfo(params, token)
-      .then((infos) => setOptions(infos.map(toOption)))
+      .then((infos) => {
+        const opts = infos.map(toOption);
+        setOptions(opts);
+        if (!initialAppliedRef.current && initialWsId != null) {
+          const match = opts.find((o) => o.value === initialWsId);
+          if (match) {
+            initialAppliedRef.current = true;
+            setSelected(match);
+            onSelect([match.value, match.wsName, match.owner, '', 0, '', '', '', {}] as WorkspaceInfo);
+          }
+        }
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
