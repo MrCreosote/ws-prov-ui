@@ -71,9 +71,7 @@ export default function App() {
           <ProvenanceGraph token={token} rootObject={object} />
         ) : (
           <div className="app-empty">
-            {!token
-              ? 'Enter your KBase token to get started.'
-              : !workspace
+            {!workspace
               ? 'Select a workspace.'
               : 'Select an object to view its provenance graph.'}
           </div>

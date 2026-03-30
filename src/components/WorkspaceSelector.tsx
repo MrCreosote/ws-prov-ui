@@ -77,7 +77,6 @@ export function WorkspaceSelector({ token, username, initialWsId, onSelect }: Pr
     setOptions([]);
     setSelected(null);
     onSelect(null);
-    if (!token) return;
 
     const params = ownOnly && username ? { owners: [username] } : {};
 
@@ -133,8 +132,7 @@ export function WorkspaceSelector({ token, username, initialWsId, onSelect }: Pr
         value={selected}
         onChange={handleChange}
         isLoading={loading}
-        isDisabled={!token}
-        placeholder={token ? 'Search workspaces…' : 'Set a token first'}
+        placeholder="Search workspaces…"
         filterOption={filterOption}
         components={{ Option: WorkspaceOption }}
         styles={selectStyles}

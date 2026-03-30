@@ -101,7 +101,7 @@ export function ObjectSelector({ token, workspace, initialObjUpa, onSelect }: Pr
     setSelected(null);
     onSelect(null);
     setError(null);
-    if (!token || !workspace) return;
+    if (!workspace) return;
 
     setLoading(true);
     listObjects({ ids: [workspace[0]], limit: 1000 }, token)
@@ -139,7 +139,7 @@ export function ObjectSelector({ token, workspace, initialObjUpa, onSelect }: Pr
 
   const searchByPrefix = useCallback(
     async (prefix: string) => {
-      if (!workspace || !token) return;
+      if (!workspace) return;
       setLoading(true);
       setError(null);
       try {
@@ -168,7 +168,7 @@ export function ObjectSelector({ token, workspace, initialObjUpa, onSelect }: Pr
 
     if (inputValue.length < MIN_SEARCH_CHARS) {
       // Revert to prefill list when input is cleared
-      if (inputValue.length === 0 && workspace && token) {
+      if (inputValue.length === 0 && workspace) {
         setLoading(true);
         listObjects({ ids: [workspace[0]], limit: 1000 }, token)
           .then((infos) => setOptions(infos.map(infoToOption)))
@@ -186,7 +186,7 @@ export function ObjectSelector({ token, workspace, initialObjUpa, onSelect }: Pr
     onSelect(opt ?? null);
   }
 
-  const disabled = !token || !workspace;
+  const disabled = !workspace;
 
   return (
     <div className="selector-group">
@@ -206,11 +206,7 @@ export function ObjectSelector({ token, workspace, initialObjUpa, onSelect }: Pr
         onInputChange={handleInputChange}
         isLoading={loading}
         isDisabled={disabled}
-        placeholder={
-          !token ? 'Set a token first' :
-          !workspace ? 'Select a workspace first' :
-          'Search objects…'
-        }
+        placeholder={!workspace ? 'Select a workspace first' : 'Search objects…'}
         components={{ Option: ObjectOption }}
         styles={selectStyles}
         filterOption={null}  // server-side filtering via prefix search

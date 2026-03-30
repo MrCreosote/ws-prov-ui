@@ -17,7 +17,7 @@ interface Props {
 }
 
 export function TokenInput({ token, onChange }: Props) {
-  const [editing, setEditing] = useState(!token);
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
   function submit() {
@@ -49,6 +49,18 @@ export function TokenInput({ token, onChange }: Props) {
         <button onClick={submit} disabled={!draft.trim()}>
           Set token
         </button>
+        <button className="token-input__skip" onClick={() => setEditing(false)}>
+          Browse anonymously
+        </button>
+      </div>
+    );
+  }
+
+  if (!token) {
+    return (
+      <div className="token-input token-input--anon">
+        <span className="token-input__label">Anonymous</span>
+        <button onClick={() => setEditing(true)}>Sign in</button>
       </div>
     );
   }

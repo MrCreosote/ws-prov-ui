@@ -194,6 +194,22 @@ body {
   color: #7ec8a0;
 }
 
+.token-input--anon .token-input__label {
+  font-size: 0.8rem;
+  color: #f0a500;
+  font-weight: 600;
+}
+
+.token-input__skip {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #8aadcf;
+  padding: 0 2px;
+}
+.token-input__skip:hover { color: #fff; }
+
 /* ---- Graph ---------------------------------------------------------------- */
 
 .graph-wrapper {
