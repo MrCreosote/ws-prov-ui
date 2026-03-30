@@ -238,6 +238,7 @@ body {
   color: #888;
   margin-top: 2px;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .node-overlay__ws {
@@ -246,6 +247,22 @@ body {
   color: #bbb;
   line-height: 1.2;
 }
+
+.expand-btn {
+  display: block;
+  margin: 3px auto 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  color: #c0392b;
+  opacity: 0.85;
+}
+.expand-btn:hover:not(:disabled) { opacity: 1; }
+.expand-btn:disabled { color: #888; cursor: default; }
 
 /* ---- Graph loading -------------------------------------------------------- */
 
